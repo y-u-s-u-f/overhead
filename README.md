@@ -2,10 +2,10 @@
 
 A small Mac app that tells you when military aircraft fly over your home.
 
-<p>
-  <img src="docs/onboarding.png" width="260" alt="Choosing a home location">
-  <img src="docs/notifications.png" width="260" alt="Turning on notifications">
-  <img src="docs/main.png" width="260" alt="The main window">
+<p align="center">
+  <img src="docs/main.png" width="32%" alt="The main window, in light and dark mode">
+  <img src="docs/location.png" width="32%" alt="Choosing a home location">
+  <img src="docs/notifications.png" width="32%" alt="Turning on notifications">
 </p>
 
 Overhead checks public ADS-B data every 10 seconds. When a military aircraft enters the area around home, you get a notification showing its type, callsign, distance and altitude. The window lists what's overhead now and what flew past recently, with a link to each aircraft on Flightradar24.
@@ -42,7 +42,9 @@ cargo run                      # run from source
 
 - **Data:** [adsb.fi](https://adsb.fi), with [adsb.lol](https://adsb.lol) as a fallback when adsb.fi doesn't respond. Aircraft are marked military by the feeds' own database (`dbFlags`).
 - **Address lookup:** [OpenStreetMap Nominatim](https://nominatim.org).
-- **Your location:** Core Location, used once when you choose it during setup. Home is stored only on your Mac, in `~/Library/Application Support/Overhead`.
+- **Your location:** Core Location, used once if you choose it during setup.
+
+There's no Overhead server. Home is saved only on your Mac, and by default the flight data services get it rounded to about 1 km. See [PRIVACY.md](PRIVACY.md) for details.
 
 ## Credits
 

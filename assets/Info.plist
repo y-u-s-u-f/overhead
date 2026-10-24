@@ -2,33 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>Overhead</string>
 	<key>CFBundleDisplayName</key>
 	<string>Overhead</string>
-	<key>CFBundleIdentifier</key>
-	<string>dev.yusuf.overhead</string>
 	<key>CFBundleExecutable</key>
 	<string>Overhead</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.yusuf.overhead</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Overhead</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.1.1</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
+	<string>2</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 	<key>NSLocationUsageDescription</key>
 	<string>Overhead uses your location once, to set the center of the area it watches.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Overhead uses your location once, to set the center of the area it watches.</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
 </dict>
 </plist>
