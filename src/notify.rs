@@ -10,8 +10,8 @@ mod native {
     use objc2_foundation::{NSBundle, NSError, NSObjectProtocol, NSString};
     use objc2_user_notifications::{
         UNAuthorizationOptions, UNMutableNotificationContent, UNNotification,
-        UNNotificationPresentationOptions, UNNotificationRequest, UNNotificationSound,
-        UNUserNotificationCenter, UNUserNotificationCenterDelegate,
+        UNNotificationPresentationOptions, UNNotificationRequest, UNNotificationResponse,
+        UNNotificationSound, UNUserNotificationCenter, UNUserNotificationCenterDelegate,
     };
 
     define_class!(
@@ -33,6 +33,18 @@ mod native {
                 completion_handler.call((UNNotificationPresentationOptions::Banner
                     | UNNotificationPresentationOptions::List
                     | UNNotificationPresentationOptions::Sound,));
+            }
+
+            // Clicking a notification brings back the window if it was closed.
+            #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
+            fn did_receive(
+                &self,
+                _center: &UNUserNotificationCenter,
+                _response: &UNNotificationResponse,
+                completion_handler: &DynBlock<dyn Fn()>,
+            ) {
+                crate::dock::show();
+                completion_handler.call(());
             }
         }
     );
