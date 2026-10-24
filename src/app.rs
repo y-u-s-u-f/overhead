@@ -29,6 +29,7 @@ struct RadiusDraft {
 
 pub struct Overhead {
     home: Coords,
+    approximate: bool,
     tracker: Tracker,
     status: Status,
     radius_mi: u32,
@@ -43,6 +44,7 @@ impl Overhead {
         let radius_focus = cx.focus_handle();
         Self {
             home,
+            approximate: settings::load_approximate(),
             tracker: Tracker::default(),
             status: Status::Connecting,
             radius_mi: settings::load_radius()
@@ -59,15 +61,15 @@ impl Overhead {
         cx.spawn(async move |this, cx| {
             let agent = feed::agent();
             loop {
-                let Ok((home, radius_mi)) =
-                    this.read_with(cx, |this, _| (this.home, this.radius_mi))
+                let Ok((home, radius_mi, approximate)) =
+                    this.read_with(cx, |this, _| (this.home, this.radius_mi, this.approximate))
                 else {
                     break;
                 };
                 let request = agent.clone();
                 let result = cx
                     .background_executor()
-                    .spawn(async move { feed::fetch(&request, home, radius_mi) })
+                    .spawn(async move { feed::fetch(&request, home, radius_mi, approximate) })
                     .await;
                 if this.update(cx, |this, cx| this.apply(result, cx)).is_err() {
                     break;

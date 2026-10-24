@@ -112,13 +112,22 @@ pub fn agent() -> ureq::Agent {
 }
 
 /// Military aircraft within the radius, closest first. Tries each source in order.
+///
+/// With `approximate`, the feeds only see home rounded to two decimals (about 1 km).
+/// The query grows by a mile to cover the difference, and distances still use exact home.
 pub fn fetch(
     agent: &ureq::Agent,
     home: Coords,
     radius_mi: u32,
+    approximate: bool,
 ) -> Result<(&'static str, Vec<Contact>), String> {
-    let (lat, lon) = home;
-    let radius_nm = (radius_mi as f64 / MILES_PER_NM).ceil() as u32;
+    let mut radius_nm = (radius_mi as f64 / MILES_PER_NM).ceil() as u32;
+    let (mut lat, mut lon) = home;
+    if approximate {
+        let round = |x: f64| (x * 100.0).round() / 100.0;
+        (lat, lon) = (round(lat), round(lon));
+        radius_nm += 1;
+    }
     let mut errors = Vec::new();
 
     for source in &SOURCES {

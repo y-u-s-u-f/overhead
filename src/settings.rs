@@ -33,6 +33,15 @@ pub fn save_radius(radius_mi: u32) {
     write("radius", radius_mi.to_string());
 }
 
+/// On unless turned off during setup.
+pub fn load_approximate() -> bool {
+    read("approximate").is_none_or(|v| v.trim() != "0")
+}
+
+pub fn save_approximate(on: bool) {
+    write("approximate", if on { "1" } else { "0" }.into());
+}
+
 pub fn load_home() -> Option<Coords> {
     location::parse_coords(&read("home")?)
 }

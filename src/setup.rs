@@ -15,6 +15,7 @@ const RISE: Duration = Duration::from_millis(520);
 const STAGGER: Duration = Duration::from_millis(60);
 /// Characters shown in the search field before older text scrolls off.
 const VISIBLE_CHARS: usize = 38;
+const PRIVACY_URL: &str = "https://github.com/y-u-s-u-f/overhead/blob/master/PRIVACY.md";
 
 pub enum SetupEvent {
     Done(Coords),
@@ -43,6 +44,7 @@ pub struct Setup {
     /// Keys the result card's animation so each new result plays it again.
     lookups: usize,
     home: Option<Coords>,
+    approximate: bool,
     focus: FocusHandle,
     task: Option<Task<()>>,
     _focus_changes: [Subscription; 2],
@@ -60,6 +62,7 @@ impl Setup {
             lookup: Lookup::Idle,
             lookups: 0,
             home: None,
+            approximate: settings::load_approximate(),
             _focus_changes: [
                 cx.on_focus(&focus, window, |_, _, cx| cx.notify()),
                 cx.on_blur(&focus, window, |_, _, cx| cx.notify()),
@@ -172,6 +175,7 @@ impl Setup {
         };
         let home = place.coords;
         settings::save_home(home);
+        settings::save_approximate(self.approximate);
         self.home = Some(home);
         if self.first_run {
             sound::play(Sound::Next);
@@ -236,6 +240,7 @@ impl Setup {
             },
             "Overhead watches the sky around one spot and tells you when military aircraft fly over it.",
             div()
+                .mt(px(24.))
                 .flex()
                 .flex_col()
                 .gap(px(12.))
@@ -257,7 +262,8 @@ impl Setup {
                 ))
                 .child(rise(divider(theme), "or", 4))
                 .child(rise(self.search_field(theme, window, cx), "field", 5))
-                .child(div().h(px(66.)).child(self.lookup_status(theme))),
+                .child(div().h(px(58.)).child(self.lookup_status(theme)))
+                .child(rise(self.privacy(theme, cx), "privacy", 6)),
             footer,
         )
     }
@@ -326,6 +332,62 @@ impl Setup {
                         .child("return ↵"),
                 )
             })
+    }
+
+    fn privacy(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::Div {
+        let link_hover = theme.text;
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                div()
+                    .id("approximate")
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.approximate = !this.approximate;
+                        cx.notify();
+                    }))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child("Share only an approximate location"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(theme.muted)
+                                    .child("Flight data services see a 1 km area, not your house."),
+                            ),
+                    )
+                    .child(switch(self.approximate, theme)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(px(4.))
+                    .text_size(px(12.))
+                    .text_color(theme.muted)
+                    .child("Home stays on this Mac. There's no Overhead server.")
+                    .child(
+                        div()
+                            .id("privacy")
+                            .text_color(theme.accent)
+                            .cursor_pointer()
+                            .hover(move |s| s.text_color(link_hover))
+                            .on_click(|_, _, cx| cx.open_url(PRIVACY_URL))
+                            .child("Privacy"),
+                    ),
+            )
     }
 
     fn lookup_status(&self, theme: &Theme) -> impl IntoElement {
@@ -428,7 +490,7 @@ fn page(
                 .child(rise(div().child(art), ("art", key), 0))
                 .child(rise(
                     div()
-                        .mt(px(28.))
+                        .mt(px(24.))
                         .text_size(px(26.))
                         .font_weight(FontWeight::BOLD)
                         .child(title),
@@ -497,7 +559,7 @@ fn caret(theme: &Theme) -> impl IntoElement {
 
 /// Rings around home, with a ping sweeping outward.
 fn radar(theme: &Theme) -> impl IntoElement {
-    const SIZE: f32 = 132.;
+    const SIZE: f32 = 112.;
     let ring = |diameter: f32| {
         div()
             .absolute()
@@ -672,6 +734,38 @@ fn divider(theme: &Theme) -> gpui::Div {
         .child(line())
         .child("or")
         .child(line())
+}
+
+fn switch(on: bool, theme: &Theme) -> impl IntoElement {
+    let (off_x, on_x) = (2., 14.);
+    div()
+        .relative()
+        .flex_shrink_0()
+        .w(px(32.))
+        .h(px(20.))
+        .rounded_full()
+        .bg(if on {
+            theme.accent
+        } else {
+            theme.faint.opacity(0.45)
+        })
+        .child(
+            div()
+                .absolute()
+                .top(px(2.))
+                .size(px(16.))
+                .rounded_full()
+                .bg(gpui::white())
+                .shadow_sm()
+                .with_animation(
+                    ("knob", on as usize),
+                    Animation::new(Duration::from_millis(240)).with_easing(ease_out_quint()),
+                    move |knob, t| {
+                        let (from, to) = if on { (off_x, on_x) } else { (on_x, off_x) };
+                        knob.left(px(from + (to - from) * t))
+                    },
+                ),
+        )
 }
 
 /// Two dots, the current page's stretched into a pill.
