@@ -3,9 +3,9 @@
 A small Mac app that tells you when military aircraft fly over your home.
 
 <p align="center">
-  <img src="docs/main.png" width="32%" alt="The main window, in light and dark mode">
-  <img src="docs/location.png" width="32%" alt="Choosing a home location">
-  <img src="docs/notifications.png" width="32%" alt="Turning on notifications">
+  <img src="docs/screenshots/main.png" width="32%" alt="The main window, in light and dark mode">
+  <img src="docs/screenshots/location.png" width="32%" alt="Choosing a home location">
+  <img src="docs/screenshots/notifications.png" width="32%" alt="Turning on notifications">
 </p>
 
 Overhead checks public ADS-B data every 10 seconds. When a military aircraft enters the area around home, you get a notification showing its type, callsign, distance and altitude. The window lists what's overhead now and what flew past recently, with a link to each aircraft on Flightradar24.
@@ -49,3 +49,7 @@ There's no Overhead server. Home is saved only on your Mac, and by default the f
 ## Credits
 
 Sounds are from Google's [Material Design sound resources](https://m2.material.io/design/sound/sound-resources.html), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+## License
+
+MIT. See [LICENSE](LICENSE). The sounds keep their own CC BY 4.0 license.
