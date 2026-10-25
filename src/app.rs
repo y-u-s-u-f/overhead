@@ -1,13 +1,16 @@
-use crate::ChangeLocation;
-use crate::feed::{self, Aircraft, Altitude, Contact, DEFAULT_RADIUS_MI, MAX_RADIUS_MI};
+use crate::feed::{
+    self, Aircraft, Altitude, AltitudeRange, Contact, DEFAULT_RADIUS_MI, MAX_RADIUS_MI,
+};
 use crate::location::Coords;
+use crate::number_field::{Committed, NumberField};
 use crate::theme::Theme;
 use crate::tracker::{Sighting, Tracker};
+use crate::{ChangeLocation, OpenSettings};
 use crate::{notify, settings};
 use chrono::{DateTime, Local};
 use gpui::{
-    Context, FocusHandle, FontWeight, IntoElement, KeyDownEvent, ParentElement, Render,
-    SharedString, Styled, Subscription, Task, Window, div, prelude::*, px,
+    Context, Entity, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 use std::time::Duration;
 
@@ -21,40 +24,79 @@ enum Status {
     Offline,
 }
 
-/// The radius being typed. `replace` is true until the first keystroke, like a selected field.
-struct RadiusDraft {
-    text: String,
-    replace: bool,
-}
-
 pub struct Overhead {
-    home: Coords,
-    approximate: bool,
+    /// Read by the settings page. Change these through the setters.
+    pub home: Coords,
+    pub approximate: bool,
+    pub radius_mi: u32,
+    pub altitude: AltitudeRange,
     tracker: Tracker,
     status: Status,
-    radius_mi: u32,
-    radius_draft: Option<RadiusDraft>,
-    radius_focus: FocusHandle,
+    radius_field: Entity<NumberField>,
     poll: Task<()>,
-    _blur: Subscription,
+    _radius_committed: Subscription,
 }
 
 impl Overhead {
     pub fn new(home: Coords, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let radius_focus = cx.focus_handle();
+        let radius_mi = settings::load_radius()
+            .filter(|r| (1..=MAX_RADIUS_MI).contains(r))
+            .unwrap_or(DEFAULT_RADIUS_MI);
+        let radius_field = cx.new(|cx| {
+            NumberField::new("radius", Some(radius_mi), 1..=MAX_RADIUS_MI, window, cx).compact()
+        });
         Self {
             home,
             approximate: settings::load_approximate(),
+            radius_mi,
+            altitude: settings::load_altitude().sorted(),
             tracker: Tracker::default(),
             status: Status::Connecting,
-            radius_mi: settings::load_radius()
-                .filter(|r| (1..=MAX_RADIUS_MI).contains(r))
-                .unwrap_or(DEFAULT_RADIUS_MI),
-            radius_draft: None,
+            _radius_committed: cx.subscribe(&radius_field, |this, _, Committed(radius), cx| {
+                if let Some(radius_mi) = radius {
+                    this.set_radius(*radius_mi, cx);
+                }
+            }),
+            radius_field,
             poll: Self::poll(cx),
-            _blur: cx.on_blur(&radius_focus, window, |this, _, cx| this.commit_radius(cx)),
-            radius_focus,
         }
+    }
+
+    pub fn set_radius(&mut self, radius_mi: u32, cx: &mut Context<Self>) {
+        let radius_mi = radius_mi.clamp(1, MAX_RADIUS_MI);
+        if radius_mi == self.radius_mi {
+            return;
+        }
+        self.radius_mi = radius_mi;
+        settings::save_radius(radius_mi);
+        self.radius_field
+            .update(cx, |field, cx| field.set_value(Some(radius_mi), cx));
+        self.tracker.retain(|c| c.distance_mi <= radius_mi as f64);
+        self.restart_poll(cx);
+    }
+
+    pub fn set_altitude(&mut self, altitude: AltitudeRange, cx: &mut Context<Self>) {
+        let altitude = altitude.sorted();
+        if altitude == self.altitude {
+            return;
+        }
+        self.altitude = altitude;
+        settings::save_altitude(altitude);
+        self.tracker
+            .retain(|c| altitude.contains(c.aircraft.alt_baro.as_ref()));
+        self.restart_poll(cx);
+    }
+
+    pub fn set_approximate(&mut self, approximate: bool, cx: &mut Context<Self>) {
+        self.approximate = approximate;
+        settings::save_approximate(approximate);
+        self.restart_poll(cx);
+    }
+
+    /// Polls again right away so a changed zone shows up without waiting.
+    fn restart_poll(&mut self, cx: &mut Context<Self>) {
+        self.poll = Self::poll(cx);
+        cx.notify();
     }
 
     fn poll(cx: &mut Context<Self>) -> Task<()> {
@@ -87,7 +129,10 @@ impl Overhead {
         match result {
             Ok((source, mut contacts)) => {
                 // A request can finish after the radius changed.
-                contacts.retain(|c| c.distance_mi <= self.radius_mi as f64);
+                contacts.retain(|c| {
+                    c.distance_mi <= self.radius_mi as f64
+                        && self.altitude.contains(c.aircraft.alt_baro.as_ref())
+                });
                 for contact in self.tracker.update(contacts, Local::now()) {
                     notify_arrival(&contact);
                 }
@@ -101,78 +146,6 @@ impl Overhead {
         cx.notify();
     }
 
-    fn edit_radius(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.radius_draft.is_none() {
-            self.radius_draft = Some(RadiusDraft {
-                text: self.radius_mi.to_string(),
-                replace: true,
-            });
-            window.focus(&self.radius_focus);
-            cx.notify();
-        }
-    }
-
-    fn radius_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(draft) = self.radius_draft.as_mut() else {
-            return;
-        };
-        let key = event.keystroke.key.as_str();
-        match key {
-            "enter" => window.blur(),
-            "escape" => {
-                self.radius_draft = None;
-                window.blur();
-            }
-            "backspace" if draft.replace => {
-                draft.text.clear();
-                draft.replace = false;
-            }
-            "backspace" => {
-                draft.text.pop();
-            }
-            "up" | "down" => {
-                let value = draft.text.parse().unwrap_or(self.radius_mi);
-                let value = if key == "up" {
-                    value + 1
-                } else {
-                    value.saturating_sub(1)
-                };
-                draft.text = value.clamp(1, MAX_RADIUS_MI).to_string();
-                draft.replace = true;
-            }
-            digit if digit.len() == 1 && digit.chars().all(|c| c.is_ascii_digit()) => {
-                if draft.replace {
-                    draft.text.clear();
-                    draft.replace = false;
-                }
-                if draft.text.len() < 3 {
-                    draft.text.push_str(digit);
-                }
-            }
-            _ => return,
-        }
-        cx.stop_propagation();
-        cx.notify();
-    }
-
-    fn commit_radius(&mut self, cx: &mut Context<Self>) {
-        let Some(draft) = self.radius_draft.take() else {
-            return;
-        };
-        cx.notify();
-        let Some(radius_mi) = draft.text.parse::<u32>().ok().filter(|r| *r > 0) else {
-            return;
-        };
-        let radius_mi = radius_mi.min(MAX_RADIUS_MI);
-        if radius_mi == self.radius_mi {
-            return;
-        }
-        self.radius_mi = radius_mi;
-        settings::save_radius(radius_mi);
-        self.tracker.shrink_to(radius_mi);
-        self.poll = Self::poll(cx);
-    }
-
     fn title_bar(&self, theme: &Theme) -> impl IntoElement {
         let (dot, label, detail) = match self.status {
             Status::Connecting => (theme.faint, "Connecting…", None),
@@ -180,13 +153,12 @@ impl Overhead {
             Status::Offline => (theme.error, "Offline", Some("retrying")),
         };
 
-        div()
-            .h(px(44.))
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .justify_end()
-            .px(px(16.))
+        title_bar()
+            .justify_between()
+            .child(
+                title_button("settings", "⚙\u{FE0E}", theme)
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenSettings), cx)),
+            )
             .child(
                 div()
                     .flex()
@@ -203,7 +175,7 @@ impl Overhead {
             )
     }
 
-    fn hero(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    fn hero(&self, theme: &Theme) -> impl IntoElement {
         let count = self.tracker.current.len();
         div()
             .flex()
@@ -231,59 +203,14 @@ impl Overhead {
                     .items_center()
                     .text_color(theme.muted)
                     .child("Within")
-                    .child(self.radius_field(theme, cx))
+                    .child(self.radius_field.clone())
                     .child("mi of")
                     .child(home_link(theme)),
             )
-    }
-
-    fn radius_field(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let (hover_bg, hover_text) = (theme.accent_soft, theme.accent);
-        let field = div()
-            .id("radius")
-            .track_focus(&self.radius_focus)
-            .mx(px(3.))
-            .px(px(5.))
-            .h(px(20.))
-            .min_w(px(22.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(5.))
-            .font_weight(FontWeight::SEMIBOLD)
-            .on_click(cx.listener(|this, _, window, cx| this.edit_radius(window, cx)))
-            .on_key_down(cx.listener(Self::radius_key))
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| this.commit_radius(cx)));
-
-        match &self.radius_draft {
-            None => field
-                .text_color(theme.text)
-                .bg(theme.card)
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover_bg).text_color(hover_text))
-                .child(self.radius_mi.to_string()),
-            Some(draft) => field
-                .bg(theme.accent_soft)
-                .text_color(theme.accent)
-                .border_1()
-                .border_color(theme.accent)
-                .cursor_text()
-                .map(|field| {
-                    if draft.replace {
-                        field.child(
-                            div()
-                                .px(px(1.))
-                                .rounded(px(3.))
-                                .bg(theme.accent_soft)
-                                .child(draft.text.clone()),
-                        )
-                    } else {
-                        field
-                            .child(draft.text.clone())
-                            .child(div().ml(px(1.)).w(px(1.5)).h(px(13.)).bg(theme.accent))
-                    }
-                }),
-        }
+            .children(
+                altitude_summary(self.altitude)
+                    .map(|summary| div().mt(px(2.)).text_color(theme.faint).child(summary)),
+            )
     }
 
     fn current_section(&self, theme: &Theme) -> impl IntoElement {
@@ -368,7 +295,7 @@ impl Overhead {
 }
 
 impl Render for Overhead {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_appearance(window.appearance());
 
         div()
@@ -390,7 +317,7 @@ impl Render for Overhead {
                     .gap(px(28.))
                     .px(px(20.))
                     .pb(px(24.))
-                    .child(self.hero(&theme, cx))
+                    .child(self.hero(&theme))
                     .child(self.current_section(&theme))
                     .child(self.recent_section(&theme)),
             )
@@ -622,6 +549,49 @@ fn icon_button(aircraft: &Aircraft, theme: &Theme) -> impl IntoElement {
         .child("↗")
 }
 
+/// The strip under the transparent titlebar, inset past the traffic lights.
+pub fn title_bar() -> gpui::Div {
+    div()
+        .h(px(44.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .pl(px(84.))
+        .pr(px(16.))
+}
+
+pub fn title_button(
+    id: &'static str,
+    glyph: &'static str,
+    theme: &Theme,
+) -> gpui::Stateful<gpui::Div> {
+    let (hover_bg, hover_text) = (theme.accent_soft, theme.accent);
+    div()
+        .id(id)
+        .size(px(28.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(8.))
+        .text_size(px(16.))
+        .text_color(theme.muted)
+        .cursor_pointer()
+        .hover(move |s| s.bg(hover_bg).text_color(hover_text))
+        .child(glyph)
+}
+
+fn altitude_summary(altitude: AltitudeRange) -> Option<String> {
+    let ft = |ft: u32| format!("{} ft", thousands(ft as i64));
+    match (altitude.min_ft, altitude.max_ft) {
+        (None, None) => None,
+        (Some(min), None) => Some(format!("Above {}", ft(min))),
+        (None, Some(max)) => Some(format!("Below {}", ft(max))),
+        (Some(min), Some(max)) => {
+            Some(format!("Between {} and {}", thousands(min as i64), ft(max)))
+        }
+    }
+}
+
 fn home_link(theme: &Theme) -> impl IntoElement {
     let hover_text = theme.accent;
     div()
@@ -663,7 +633,7 @@ fn speed(aircraft: &Aircraft) -> String {
         .map_or("—".into(), |kt| format!("{kt:.0} kt"))
 }
 
-fn thousands(n: i64) -> String {
+pub fn thousands(n: i64) -> String {
     let digits = n.abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {

@@ -4,8 +4,10 @@ mod dock;
 mod feed;
 mod location;
 mod notify;
+mod number_field;
 mod root;
 mod settings;
+mod settings_page;
 mod setup;
 mod sound;
 mod theme;
@@ -16,7 +18,16 @@ use gpui::{
     WindowBackgroundAppearance, WindowBounds, WindowOptions, actions, point, prelude::*, px, size,
 };
 
-actions!(overhead, [Quit, ChangeLocation, CloseWindow]);
+actions!(
+    overhead,
+    [
+        Quit,
+        ChangeLocation,
+        OpenSettings,
+        CloseSettings,
+        CloseWindow
+    ]
+);
 
 fn main() {
     let app = Application::new();
@@ -32,11 +43,13 @@ fn main() {
         cx.bind_keys([
             KeyBinding::new("cmd-q", Quit, None),
             KeyBinding::new("cmd-w", CloseWindow, None),
+            KeyBinding::new("cmd-,", OpenSettings, None),
         ]);
         cx.set_menus(vec![
             Menu {
                 name: "Overhead".into(),
                 items: vec![
+                    MenuItem::action("Settings…", OpenSettings),
                     MenuItem::action("Change Home Location…", ChangeLocation),
                     MenuItem::separator(),
                     MenuItem::action("Quit Overhead", Quit),
@@ -78,6 +91,23 @@ fn main() {
             cx.defer(move |cx| {
                 window
                     .update(cx, |root, window, cx| root.change_location(window, cx))
+                    .ok();
+            })
+        });
+        cx.on_action(move |_: &OpenSettings, cx| {
+            cx.defer(move |cx| {
+                window
+                    .update(cx, |root, window, cx| {
+                        window.activate_window();
+                        root.open_settings(window, cx)
+                    })
+                    .ok();
+            })
+        });
+        cx.on_action(move |_: &CloseSettings, cx| {
+            cx.defer(move |cx| {
+                window
+                    .update(cx, |root, _, cx| root.close_settings(cx))
                     .ok();
             })
         });

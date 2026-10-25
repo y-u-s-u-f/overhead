@@ -1,18 +1,20 @@
 use crate::app::Overhead;
 use crate::location::Coords;
 use crate::settings;
+use crate::settings_page::SettingsPage;
 use crate::setup::{Setup, SetupEvent};
 use gpui::{
-    Animation, AnimationExt, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    Animation, AnimationExt, AnyView, Context, Entity, IntoElement, ParentElement, Render, Styled,
     Subscription, Window, div, ease_out_quint, prelude::*,
 };
 use std::time::Duration;
 
-/// Shows setup until home is known, then the main view.
+/// Shows setup until home is known, then the main view. Settings and setup cover it when open.
 pub struct Root {
     main: Option<Entity<Overhead>>,
+    settings: Option<Entity<SettingsPage>>,
     setup: Option<(Entity<Setup>, Subscription)>,
-    /// Bumped on every switch so the main view fades in again.
+    /// Bumped on every switch so the view underneath fades in again.
     shown: usize,
     _appearance: Subscription,
 }
@@ -22,6 +24,7 @@ impl Root {
         crate::blur::fix(window);
         let mut root = Self {
             main: None,
+            settings: None,
             setup: None,
             shown: 0,
             _appearance: cx.observe_window_appearance(window, |_, _, cx| cx.notify()),
@@ -34,7 +37,11 @@ impl Root {
     }
 
     fn show_main(&mut self, home: Coords, window: &mut Window, cx: &mut Context<Self>) {
-        self.main = Some(cx.new(|cx| Overhead::new(home, window, cx)));
+        let main = cx.new(|cx| Overhead::new(home, window, cx));
+        if self.settings.is_some() {
+            self.settings = Some(cx.new(|cx| SettingsPage::new(main.clone(), window, cx)));
+        }
+        self.main = Some(main);
         self.setup = None;
         self.shown += 1;
         cx.notify();
@@ -60,19 +67,42 @@ impl Root {
             self.show_setup(false, window, cx);
         }
     }
+
+    pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(main) = self.main.clone() else {
+            return;
+        };
+        if self.settings.is_none() && self.setup.is_none() {
+            self.settings = Some(cx.new(|cx| SettingsPage::new(main, window, cx)));
+            self.shown += 1;
+            cx.notify();
+        }
+    }
+
+    pub fn close_settings(&mut self, cx: &mut Context<Self>) {
+        if self.settings.is_some() && self.setup.is_none() {
+            self.settings = None;
+            self.shown += 1;
+            cx.notify();
+        }
+    }
 }
 
 impl Render for Root {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let root = div().size_full();
-        match (&self.setup, &self.main) {
-            (Some((setup, _)), _) => root.child(setup.clone()),
-            (None, Some(main)) => root.child(div().size_full().child(main.clone()).with_animation(
-                ("main", self.shown),
-                Animation::new(Duration::from_millis(450)).with_easing(ease_out_quint()),
-                |main, t| main.opacity(t),
-            )),
-            (None, None) => root,
+        if let Some((setup, _)) = &self.setup {
+            return root.child(setup.clone());
         }
+        let (key, view): (&'static str, AnyView) = match (&self.settings, &self.main) {
+            (Some(settings), _) => ("settings", settings.clone().into()),
+            (None, Some(main)) => ("main", main.clone().into()),
+            (None, None) => return root,
+        };
+        root.child(div().size_full().child(view).with_animation(
+            (key, self.shown),
+            Animation::new(Duration::from_millis(450)).with_easing(ease_out_quint()),
+            |view, t| view.opacity(t),
+        ))
     }
 }

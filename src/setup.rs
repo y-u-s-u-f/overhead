@@ -736,7 +736,7 @@ fn divider(theme: &Theme) -> gpui::Div {
         .child(line())
 }
 
-fn switch(on: bool, theme: &Theme) -> impl IntoElement {
+pub fn switch(on: bool, theme: &Theme) -> impl IntoElement {
     let (off_x, on_x) = (2., 14.);
     div()
         .relative()

@@ -69,11 +69,11 @@ impl Tracker {
         arrivals
     }
 
-    /// Moves aircraft outside a newly shrunk zone straight to recent.
-    pub fn shrink_to(&mut self, radius_mi: u32) {
-        let (outside, inside): (Vec<_>, Vec<_>) = std::mem::take(&mut self.current)
+    /// Moves aircraft that no longer belong in a changed zone straight to recent.
+    pub fn retain(&mut self, keep: impl Fn(&Contact) -> bool) {
+        let (inside, outside): (Vec<_>, Vec<_>) = std::mem::take(&mut self.current)
             .into_iter()
-            .partition(|s| s.contact.distance_mi > radius_mi as f64);
+            .partition(|s| keep(&s.contact));
         self.current = inside;
         self.add_recent(outside);
     }
@@ -149,7 +149,7 @@ mod tests {
             Local::now(),
         );
 
-        tracker.shrink_to(5);
+        tracker.retain(|c| c.distance_mi <= 5.0);
         assert_eq!(tracker.current[0].contact.aircraft.hex, "near");
         assert_eq!(tracker.current.len(), 1);
         assert_eq!(tracker.recent[0].contact.aircraft.hex, "far");

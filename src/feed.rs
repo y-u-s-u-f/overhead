@@ -40,6 +40,40 @@ pub enum Altitude {
     Ground(#[allow(dead_code)] String),
 }
 
+/// Barometric altitude bounds in feet. A missing bound is open.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct AltitudeRange {
+    pub min_ft: Option<u32>,
+    pub max_ft: Option<u32>,
+}
+
+/// The highest altitude the settings accept.
+pub const MAX_ALTITUDE_FT: u32 = 60_000;
+
+impl AltitudeRange {
+    /// Puts the bounds in order.
+    pub fn sorted(self) -> Self {
+        match (self.min_ft, self.max_ft) {
+            (Some(min), Some(max)) if min > max => Self {
+                min_ft: Some(max),
+                max_ft: Some(min),
+            },
+            _ => self,
+        }
+    }
+
+    /// Aircraft on the ground count as 0 ft. Ones that don't report altitude always pass.
+    pub fn contains(&self, altitude: Option<&Altitude>) -> bool {
+        let ft = match altitude {
+            Some(Altitude::Feet(ft)) => *ft,
+            Some(Altitude::Ground(_)) => 0.0,
+            None => return true,
+        };
+        self.min_ft.is_none_or(|min| ft >= min as f64)
+            && self.max_ft.is_none_or(|max| ft <= max as f64)
+    }
+}
+
 impl Aircraft {
     pub fn callsign(&self) -> Option<&str> {
         self.callsign
@@ -220,6 +254,36 @@ mod tests {
         );
         let hexes: Vec<_> = contacts.iter().map(|c| c.aircraft.hex.as_str()).collect();
         assert_eq!(hexes, ["near"]);
+    }
+
+    #[test]
+    fn altitude_range() {
+        let feet = Altitude::Feet(5000.0);
+        let ground = Altitude::Ground("ground".into());
+        let below = AltitudeRange {
+            min_ft: None,
+            max_ft: Some(10_000),
+        };
+        let above = AltitudeRange {
+            min_ft: Some(1000),
+            max_ft: None,
+        };
+        assert!(AltitudeRange::default().contains(Some(&ground)));
+        assert!(below.contains(Some(&feet)) && below.contains(Some(&ground)));
+        assert!(above.contains(Some(&feet)) && !above.contains(Some(&ground)));
+        assert!(!below.contains(Some(&Altitude::Feet(35_000.0))));
+        assert!(above.contains(None));
+        assert_eq!(
+            AltitudeRange {
+                min_ft: Some(9000),
+                max_ft: Some(2000)
+            }
+            .sorted(),
+            AltitudeRange {
+                min_ft: Some(2000),
+                max_ft: Some(9000)
+            }
+        );
     }
 
     #[test]
